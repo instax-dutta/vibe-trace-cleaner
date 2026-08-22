@@ -1,0 +1,14 @@
+# vibe-trace-cleaner blocklist
+# ----------------------------
+# Add personal identifiers one per line. Every term here is replaced with
+# [REDACTED] everywhere in the output (case-insensitive), including inside
+# nested tool-call JSON.
+#
+# Add things like:
+#   - your real name and common variants
+#   - your usernames/handles (github, HF, discord, ...)
+#   - your email domains
+#   - your organizations / companies
+#   - private project codenames that are too generic to auto-hash
+#
+# Lines starting with # are ignored.
