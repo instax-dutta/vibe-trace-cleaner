@@ -7,7 +7,7 @@ Built for contributors of [saidutta69/agentic-vibecoding-traces](https://hugging
 > **Privacy first.** Everything runs 100% locally. Nothing is uploaded anywhere by this tool. You review the output before you send it.
 
 <div align="center">
-  <img src="https://res.cloudinary.com/cmazqjs6/image/upload/racer_is_op_banner_branded_pu7zud.png" alt="RACER IS OP" width="100%">
+  <img src="https://photu.kashyalabanavli.site/racer-is-op.png" alt="RACER IS OP" width="100%">
 </div>
 
 ## Supported agents (auto-detected)
