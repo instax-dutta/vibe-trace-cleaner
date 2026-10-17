@@ -101,7 +101,35 @@ One JSON object per line:
 
 Quality rubric (0-100): completed trajectory (+25), real tool work (+10), tool error rate (+15/+7), no repetition loops (+10), sane length (+5), refusal (-40), dead-end (-30).
 
-## Submitting your traces
+## Publish to your own Hugging Face dataset
+
+The publisher is generic — nothing is baked in for any particular user. Point it
+at your own dataset repo:
+
+```bash
+pip install -r requirements.txt
+hf auth login                              # a token with write access
+
+cp blocklist.example.txt blocklist.txt     # your names/handles/project codenames
+python vibe_clean.py --out cleaned_output  # extract + anonymize + score
+
+python publish_hf.py --repo <you>/<dataset> \
+    --input cleaned_output/agent_traces_unfiltered.jsonl
+```
+
+`publish_hf.py` creates the dataset (private by default) and writes the same
+layout for everyone — `premium` / `standard` / `unfiltered` quality tiers plus a
+config per source agent (`opencode`, `claude-code`, `grok-cli`,
+`manicode-freebuff`) — and generates the dataset card. Re-run it whenever you
+accumulate more sessions: new segments are appended and already-published ids
+are replaced (upsert), so re-runs are safe.
+
+Options: `--agents`, `--min-score`, `--baseline-rev`, `--public`, `--no-upload`
+(write parquet locally without uploading), `--update-readme`.
+
+## Submitting to this dataset
+
+Prefer to contribute your traces to [the main dataset](https://huggingface.co/datasets/saidutta69/agentic-vibecoding-traces)?
 
 Email **[contact@sdad.pro](mailto:contact@sdad.pro)** with your `agent_traces_premium.jsonl` (or a download link) after you've reviewed `review_sample.jsonl`. We'll run a second independent privacy check before anything is published to [the dataset](https://huggingface.co/datasets/saidutta69/agentic-vibecoding-traces).
 
