@@ -333,18 +333,59 @@ EXTRACTORS = {
 # anonymization
 # ============================================================
 EMAIL=re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-SECRET=re.compile(r"(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|Bearer\s+[A-Za-z0-9._\-]{20,}|hf_[A-Za-z0-9]{30,})")
-KV_SECRET=re.compile(r"(?i)(api[_-]?key|token|secret|password)(['\"]?\s*[:=]\s*['\"]?)[0-9a-zA-Z._\-]{24,}")
+SECRET=re.compile(
+    r"(sk-[A-Za-z0-9_\-]{16,}"
+    r"|(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}"
+    r"|github_pat_[A-Za-z0-9_]{20,}"
+    r"|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}"
+    r"|AIza[0-9A-Za-z_\-]{35}"
+    r"|xox[baprs]-[A-Za-z0-9-]{10,}"
+    r"|glpat-[0-9A-Za-z_\-]{20,}"
+    r"|npm_[A-Za-z0-9]{36}"
+    r"|SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}"
+    r"|(?:sk|rk)_live_[0-9a-zA-Z]{24,}"
+    r"|hf_[A-Za-z0-9]{30,}"
+    r"|eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]{0,4000}?-----END [A-Z ]*PRIVATE KEY-----"
+    r"|Bearer\s+[A-Za-z0-9._\-]{20,}"
+    r"|dop_v1_[0-9a-f]{64}|r8_[A-Za-z0-9]{20,})"
+)
+KV_SECRET=re.compile(r"(?i)(api[_-]?key|secret|token|password|passwd|client[_-]?secret|access[_-]?key)(['\"]?\s*[:=]\s*['\"]?)[A-Za-z0-9._\-]{20,}")
 USERPATH=re.compile(r"/(?:Users|home)/[A-Za-z0-9_.\-]{2,}")
+BARE=re.compile(r"/(?:Users|home)/")
 HOST=re.compile(r"\b[A-Za-z0-9-]+\.local\b")
 
+def _load_words():
+    try:
+        return set(w.strip().lower() for w in open("/usr/share/dict/words"))
+    except Exception:
+        return set()
+
+WORDS=_load_words()
+SUPPLEMENTAL={"download","downloads","unhinged","repo","repos","temp","tmp","docs"}
+
+def is_common_word(w):
+    """True if w looks like an ordinary English word (avoid redacting prose when
+    a project name happens to be a common word like 'server' or 'downloads')."""
+    w=w.lower()
+    if w in SUPPLEMENTAL: return True
+    for suf in ("","s","es","ing","ed"):
+        if w.endswith(suf) and len(w)>len(suf) and (w[:len(w)-len(suf)] in WORDS or w[:len(w)-len(suf)] in SUPPLEMENTAL):
+            return True
+    return w in WORDS
+
 class Scrubber:
-    """Builds a project inventory first, then scrubs every string recursively."""
+    """Builds a project inventory first, then scrubs every string recursively.
+
+    Project names are removed case-insensitively, both at word boundaries and
+    embedded inside identifiers (camelCase / snake_case). Stems that are ordinary
+    English words are not expanded, so prose is not clobbered."""
     def __init__(self, samples, blocklist_terms):
         self.redactions=Counter()
         self.HOME=str(Path.home())
+        self.username=Path.home().name
         # auto-blocklist: the local username is always identifying
-        auto={Path.home().name.lower()}
+        auto={self.username.lower()}
         try:
             import getpass
             auto.add(getpass.getuser().lower())
@@ -358,17 +399,26 @@ class Scrubber:
             if parts: slugs.add(parts[0])
         slugs={s for s in slugs if s and 1<len(s)<60}
         self.slug_lookup={}
-        for k in slugs:
+        for k in sorted(slugs):
             a="proj-"+sha(k)
             self.slug_lookup[k.lower()]=a
-            segs=re.split(r"[-_.]", k)
             acc=[]
-            for i,sg in enumerate(segs[:-1]):
+            for sg in re.split(r"[-_.]", k)[:-1]:
                 acc.append(sg)
                 stem="-".join(acc).lower()
-                if len(stem)>=6 and stem not in self.slug_lookup:
+                # only expand a stem if it is distinctive (not an ordinary word)
+                if len(stem)>=6 and stem not in self.slug_lookup and not is_common_word(stem):
                     self.slug_lookup[stem]=a
-        self.FAMILY_RE=re.compile("(?i)(?<![A-Za-z0-9_])("+ "|".join(re.escape(s_) for s_ in sorted(self.slug_lookup,key=len,reverse=True)) +")[A-Za-z0-9_.\\-]*") if self.slug_lookup else None
+        keys=sorted(self.slug_lookup, key=len, reverse=True)
+
+        def _rx(sub, loose=False):
+            if not sub: return None
+            # boundary allows a preceding '_' (catches snake_case); loose drops the
+            # boundary entirely to catch names embedded in camelCase identifiers.
+            lb="" if loose else "(?<![A-Za-z0-9])"
+            return re.compile("(?i)"+lb+"("+"|".join(re.escape(s_) for s_ in sub)+")[A-Za-z0-9_.\\-]*")
+        self.NAME_STRICT=_rx(keys)
+        self.NAME_LOOSE=_rx([k for k in keys if len(k)>=6], loose=True)
         # blocklist
         terms=sorted(set(t.strip().lower() for t in blocklist_terms if t.strip()) | auto, key=len, reverse=True)
         self.BL_RE=re.compile("("+"|".join(re.escape(t) for t in terms)+")", re.IGNORECASE) if terms else None
@@ -377,9 +427,11 @@ class Scrubber:
         if not isinstance(text,str): return text
         t=text.replace(self.HOME,"~")
         t=USERPATH.sub("~",t)
-        if self.FAMILY_RE is not None:
-            t=self.FAMILY_RE.sub(lambda m: self.slug_lookup.get(m.group(1).lower(),
-                                 "proj-"+sha(m.group(1).lower())), t)
+        t=BARE.sub("~/",t)
+        for rxf in (self.NAME_STRICT, self.NAME_LOOSE):
+            if rxf is not None:
+                t=rxf.sub(lambda m: self.slug_lookup.get(m.group(1).lower(),
+                                     "proj-"+sha(m.group(1).lower())), t)
         if self.BL_RE is not None:
             self.redactions["identity_blocklist"]+=len(self.BL_RE.findall(t))
             t=self.BL_RE.sub("[REDACTED]",t)
@@ -392,7 +444,7 @@ class Scrubber:
     def scrub_any(self, v):
         if isinstance(v,str): return self.scrub(v)
         if isinstance(v,list): return [self.scrub_any(x) for x in v]
-        if isinstance(v,dict): return {k:self.scrub_any(x) for k,x in v.items()}
+        if isinstance(v,dict): return {self.scrub(k):self.scrub_any(x) for k,x in v.items()}
         return v
 
     def scrub_msg(self, m):
@@ -411,7 +463,7 @@ class Scrubber:
                 except Exception:
                     a_s=self.scrub(fn.get("arguments","{}"))
                 calls.append({"id":c.get("id"),"type":"function",
-                              "function":{"name":fn.get("name"),"arguments":a_s}})
+                              "function":{"name":self.scrub(fn.get("name") or ""),"arguments":a_s}})
             out["tool_calls"]=calls
         return out
 
@@ -426,8 +478,9 @@ def segment(session, scrubber):
     starts=[i for i,m in enumerate(conv) if m["role"]=="user"]
     if not starts: return []
     segs=[]
-    d=(session.get("directory") or "")
-    root=next((p for p in d.replace("\\","/").split("/") if p and not p.startswith("~") and ":" not in p), None)
+    d=(session.get("directory") or "").replace("\\","/")
+    d=d.replace(scrubber.HOME,"~").replace("/home/","~/").replace("/Users/","~/")
+    root=next((p for p in d.split("/") if p and p!="~" and ":" not in p), None)
     pid = scrubber.slug_lookup.get((root or "").lower()) or ("proj-"+sha(root or "root"))
     for si,st_i in enumerate(starts):
         end=starts[si+1] if si+1<len(starts) else len(conv)
