@@ -4,6 +4,8 @@ Extract, **anonymize**, segment and quality-score your local coding-agent sessio
 
 Built for contributors of [saidutta69/agentic-vibecoding-traces](https://huggingface.co/datasets/saidutta69/agentic-vibecoding-traces), but works standalone on any machine.
 
+> **Using a coding agent?** Point it at [`AGENTS.md`](AGENTS.md) — the repo's DOX contract. It documents what each script owns, the exact workflow, the anonymization + schema contracts, and how to verify changes, so an agent can pick up the work without extra context.
+
 > **Privacy first.** Everything runs 100% locally. Nothing is uploaded anywhere by this tool. You review the output before you send it.
 
 <div align="center">
